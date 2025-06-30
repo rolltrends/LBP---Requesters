@@ -1,0 +1,30 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon index.js",
+    "start": "node index.js",
+    "build": "echo \"No build step defined\"",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@faker-js/faker": "^9.8.0",
+    "@prisma/client": "^6.10.1",
+    "axios": "^1.10.0",
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "ldapjs": "^3.0.7",
+    "mysql2": "^3.14.1",
+    "node-fetch": "^3.3.2",
+    "nodemon": "^3.1.10",
+    "open": "^10.1.2",
+    "prisma": "^6.10.1"
+  }
+}
