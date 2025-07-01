@@ -8,13 +8,14 @@ datasource db {
 }
 
 model Requester {
-  id         Int    @id @default(autoincrement())
-  first_name String
-  last_name  String
-  phone_num  String
-  mobile String
-  email_id   String @unique
+  id          Int    @id @default(autoincrement())
+  name        String
+  first_name  String
+  last_name   String
+  phone_num   String
+  mobile      String
+  email_id    String @unique
   employee_id String
-  job_title String
+  job_title   String
   description String
 }

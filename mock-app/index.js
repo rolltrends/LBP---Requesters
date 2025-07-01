@@ -41,21 +41,22 @@ app.get('/lbp/requesters', async (req, res) => {
   }
 
   try {
-    const results = await prisma.requester.findMany({
-      where: {
-        OR: [
-          { first_name: { contains: search, mode: 'insensitive' } },
-          { last_name: { contains: search, mode: 'insensitive' } },
-          { email_id: { contains: search, mode: 'insensitive' } },
-          { phone: { not: null, contains: search, mode: 'insensitive' } },
-          { mobile: { not: null, contains: search, mode: 'insensitive' } },
-          { employee_id: { contains: search, mode: 'insensitive' } },
-          { job_title: { contains: search, mode: 'insensitive' } },
-          { description: { contains: search, mode: 'insensitive' } },
-        ],
-      },
-      take: 10,
-    });
+      const results = await prisma.requester.findMany({
+        where: {
+          OR: [
+            { name: { contains: search } },
+            { first_name: { contains: search } },
+            { last_name: { contains: search } },
+            { email_id: { contains: search } },
+            { phone_num: { contains: search } },
+            { mobile: { contains: search } },
+            { employee_id: { contains: search } },
+            { job_title: { contains: search } },
+            { description: { contains: search } },
+          ],
+        },
+        take: 10,
+      });
 
     res.json(results);
   } catch (err) {
