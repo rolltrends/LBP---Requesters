@@ -52,10 +52,10 @@ app.get('/lbp/requesters', async (req, res) => {
             { mobile: { contains: search } },
             { employee_id: { contains: search } },
             { job_title: { contains: search } },
+            { gender: { contains: search } },
             { description: { contains: search } },
           ],
-        },
-        take: 10,
+        }
       });
 
     res.json(results);

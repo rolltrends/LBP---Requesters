@@ -18,6 +18,7 @@ async function main() {
       employee_id: `EMP-${faker.number.int({ min: 1000, max: 9999 })}`,
       job_title: faker.person.jobTitle(),
       description: faker.lorem.sentence(),
+      gender
       },
     });
   }

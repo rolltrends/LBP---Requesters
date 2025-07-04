@@ -68,7 +68,7 @@ app.get('/audit_logs', requireSession, async (req, res) => {
         ...(username && { username }),
         ...(module && { module }),
       },
-      orderBy: { timestamp: 'desc' },
+      orderBy: { createdAt: 'desc' },
       take: 100
     });
 
@@ -79,6 +79,13 @@ app.get('/audit_logs', requireSession, async (req, res) => {
       old_value: '',
       new_value: 'Viewed audit logs'
     });
+    // console.log(logAudit({
+    //   username: req.session.username,
+    //   module: 'Audit',
+    //   action: 'VIEW_AUDIT_LOGS',
+    //   old_value: '',
+    //   new_value: 'Viewed audit logs'
+    // }));
 
     res.json(logs);
   } catch (err) {
@@ -231,116 +238,36 @@ app.post('/logout', requireSession, async (req, res) => {
 
 
 
-// // 🔍 Search Requesters (fetch from mock-app)
-// app.get('/requesters', requireSession, async (req, res) => {
-//   const { search } = req.query;
-//   if (!search || search.trim() === '') {
-//     return res.status(400).json({ error: 'Search query is required' });
-//   }
-
-//   try {
-//     // Step 1: Search from local SQLite (Prisma)
-//     const localResults = await prisma.Requester.findMany({
-//       where: {
-//         OR: [
-//           { name: { contains: search } },
-//           { first_name: { contains: search } },
-//           { last_name: { contains: search } },
-//           { email_id: { contains: search } },
-//           { phone_num: { contains: search } },
-//           { mobile: { contains: search } },
-//           { employee_id: { contains: search } },
-//           { job_title: { contains: search } },
-//           { gender: { contains: search } },
-//           { description: { contains: search } },
-//         ]
-//       }
-//     });
-
-//     // 👉 Add source tag
-//     const localTagged = localResults.map(user => ({ ...user, source: 'local' }));
-
-//     // Step 2: Search from external API
-//     const externalResponse = await axios.get('http://localhost:5050/lbp/requesters', {
-//       params: { search: search },
-//     });
-//     const externalRaw = externalResponse.data || [];
-//     const externalTagged = externalRaw.map(user => ({ ...user, source: 'external' }));
-
-//     // Step 3: Combine both results (keep all)
-//     const combined = [...localTagged, ...externalTagged];
-
-//     // Step 4: Deduplicate by email_id (keep external if already in local)
-//     const deduped = Object.values(
-//       combined.reduce((acc, curr) => {
-//         acc[curr.email_id] = acc[curr.email_id] && acc[curr.email_id].source === 'local'
-//           ? acc[curr.email_id]
-//           : curr;
-//         return acc;
-//       }, {})
-//     );
-
-//     // Step 5: Log the audit
-//     await logAudit({
-//       username: req.session.username,
-//       module: 'Requester',
-//       action: 'SEARCH',
-//       old_value: '',
-//       new_value: `Searched for: ${search}`
-//     });
-
-//     res.json(deduped);
-
-//   } catch (error) {
-//     console.error('❌ Search error:', error.message);
-//     res.status(500).json({ error: 'Failed to search requesters', detail: error.message });
-//   }
-// });
-
-// 🔍 Search Requesters (external only + check against local)
-app.get('/requesters', requireSession, async (req, res) => {
-  const { search } = req.query;
-  if (!search || search.trim() === '') {
-    return res.status(400).json({ error: 'Search query is required' });
-  }
+// 🔍 Search Requesters (fetch from mock-app)
+app.get('/requesters', requireSession,async (req, res) => {
+  const { name } = req.query;
+  if (!name) return res.status(400).json({ error: 'Search term is required' });
 
   try {
-    // 1. Get external data
-    const externalResponse = await axios.get('http://localhost:5050/lbp/requesters', {
-      params: { search }
+    const response = await axios.get('http://localhost:5050/lbp/requesters', {
+      params: { search: name },
     });
-
-    const externalRaw = externalResponse.data || [];
-
-    // 2. Get all local users (to compare with external)
-    const localUsers = await prisma.Requester.findMany();
-
-    // 3. Attach matching local user to each external record
-    const enriched = externalRaw.map(ext => {
-      const match = localUsers.find(loc =>
-        (loc.email_id && loc.email_id === ext.email_id)
-        // (loc.employee_id && loc.employee_id === ext.employee_id)
-      );
-      return { ...ext, source: 'external', localMatch: match || null };
-    });
-
-    // 📝 Audit log
+    
     await logAudit({
       username: req.session.username,
       module: 'Requester',
-      action: 'SEARCH_EXTERNAL',
+      action: 'SEARCH',
       old_value: '',
-      new_value: `Searched external: ${search}`
+      new_value: `Searched for: ${name}`
     });
-
-    res.json(enriched);
+    // console.log(logAudit({
+    //   username: req.session.username,
+    //   module: 'Requester',
+    //   action: 'SEARCH',
+    //   old_value: '',
+    //   new_value: `Searched for: ${name}`
+    // }));
+    res.json(response.data);
 
   } catch (error) {
-    console.error('❌ External search error:', error.message);
-    res.status(500).json({ error: 'Failed to search external requesters', detail: error.message });
+    res.status(500).json({ error: 'Search failed', details: error.message });
   }
 });
-
 
 // 🚀 Push Requester to SDP
 app.post('/add_requester', requireSession, async (req, res) => {
@@ -450,49 +377,15 @@ app.put('/update_requester/:id', requireSession, async (req, res) => {
       });
     }
 
-    const payload = {
-      requester: {
-        name: `${updates.first_name} ${updates.last_name}`,
-        first_name: updates.first_name,
-        last_name: updates.last_name,
-        email_id: updates.email_id,
-        phone: updates.phone_num,
-        mobile: updates.mobile,
-        employee_id: updates.employee_id,
-        job_title: updates.job_title,
-        description: updates.description,
-        udf_fields: {
-          udf_char1: updates.gender || null,
-          udf_char2: null,
-        }
-      }
-    };
+    const payload = { requester: { ...updates } };
 
-    const url = `${process.env.SDP_ENV_URL}/api/v3/requesters/${requesterId}?input_data=${encodeURIComponent(JSON.stringify(payload))}`;
-
+    const url = process.env.SDP_ENV_URL + `/api/v3/requesters/${requesterId}?input_data=${encodeURIComponent(JSON.stringify(payload))}`;
     const response = await axios.put(url, {}, {
       headers: {
         Authorization: `Zoho-oauthtoken ${token}`,
         'Content-Type': 'application/x-www-form-urlencoded',
         Accept: 'application/vnd.manageengine.sdp.v3+json'
       }
-    });
-
-    // ✅ Update local database as well
-    await prisma.Requester.update({
-      where: { requester_id: requesterId },
-      data: {
-        name: `${updates.first_name} ${updates.last_name}`,
-        first_name: updates.first_name,
-        last_name: updates.last_name,
-        email_id: updates.email_id,
-        phone_num: updates.phone_num,
-        mobile: updates.mobile,
-        employee_id: updates.employee_id,
-        job_title: updates.job_title,
-        description: updates.description,
-        gender: updates.gender || null,
-      },
     });
 
     await logAudit({
@@ -507,13 +400,13 @@ app.put('/update_requester/:id', requireSession, async (req, res) => {
 
   } catch (err) {
     console.error('❌ Update requester error:', err.response?.data || err.message);
+
     res.status(500).json({
       error: 'Failed to update requester',
       detail: err.response?.data || err.message,
     });
   }
 });
-
 
 
 

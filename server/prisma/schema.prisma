@@ -19,12 +19,16 @@ model Requester {
   employee_id String
   job_title   String
   description String
+  gender String
+  created_date DateTime @default(now())
 }
 
 model AuditTrail {
   id         Int      @id @default(autoincrement())
-  user       String
-  action     String
+  username       String
   module     String
-  createdAt  DateTime @default(now())
+  action     String
+  old_value String
+  new_value String
+  timestamp  DateTime @default(now())
 }
