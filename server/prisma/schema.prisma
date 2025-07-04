@@ -3,12 +3,13 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlserver"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
 model Requester {
   id          Int    @id @default(autoincrement())
+  requester_id String @unique
   name        String
   first_name  String
   last_name   String
@@ -18,4 +19,12 @@ model Requester {
   employee_id String
   job_title   String
   description String
+}
+
+model AuditTrail {
+  id         Int      @id @default(autoincrement())
+  user       String
+  action     String
+  module     String
+  createdAt  DateTime @default(now())
 }

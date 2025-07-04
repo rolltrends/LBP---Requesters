@@ -11,69 +11,22 @@ const prisma = new PrismaClient();
 app.use(cors({ origin: 'http://localhost:3000' }));
 app.use(express.json());
 
-const sessions = {};
-const SESSION_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
+// 🔐 Get Zoho SDP Access Token
+async function getSdpAccessToken() {
+  const { data } = await axios.post(
+    'https://accounts.zoho.com/oauth/v2/token',
+    new URLSearchParams({
+      refresh_token: process.env.SDP_REFRESH_TOKEN,
+      client_id: process.env.SDP_CLIENT_ID,
+      client_secret: process.env.SDP_CLIENT_SECRET,
+      grant_type: 'refresh_token',
+    }),
+    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+  );
 
-// 🧾 Audit Logger
-async function logAudit(user, actionId, action, module) {
-  try {
-    await prisma.AuditTrail.create({
-      data: { user, actionId, action, module }
-    });
-  } catch (err) {
-    console.error('❌ Failed to log audit:', err.message);
-  }
+  if (!data.access_token) throw new Error('Access token not returned');
+  return data.access_token;
 }
-
-// ✅ Middleware to check session
-function requireSession(req, res, next) {
-  const sessionId = req.headers['x-session-id'];
-  const session = sessions[sessionId];
-  if (!session) {
-    console.log('Session not found:', sessionId);
-    return res.status(401).json({ error: 'Session expired or invalid' });
-  }
-  if (session.expiresAt < Date.now()) {
-    console.log('Session expired:', sessionId);
-    return res.status(401).json({ error: 'Session expired or invalid' });
-  }
-  req.session = session;
-  next();
-}
-
-// 🧾 Audit Logger
-async function logAudit(user, action, module) {
-  try {
-    await prisma.AuditTrail.create({
-      data: { user, action, module }
-    });
-  } catch (err) {
-    console.error('❌ Failed to log audit:', err.message);
-  }
-}
-
-// 📜 Get Audit Logs
-app.get('/audit_logs', requireSession, async (req, res) => {
-  const { username, module } = req.query;
-
-  try {
-    const logs = await prisma.AuditTrail.findMany({
-      where: {
-        ...(username && { username }),
-        ...(module && { module }),
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 100
-    });
-
-    await logAudit(req.session.username, 'VIEW_AUDIT_LOGS', 'Viewed audit logs', 'Audit');
-
-    res.json(logs);
-  } catch (err) {
-    console.error('❌ Error fetching audit logs:', err.message);
-    res.status(500).json({ error: 'Failed to fetch audit logs' });
-  }
-});
 
 
 // Add this route to handle Zoho OAuth redirect and token exchange
@@ -84,8 +37,6 @@ app.get('/redirect_uri', async (req, res) => {
     return res.status(400).send('❌ No authorization code received.');
   }
 
-  
-  // await logAudit(username, 'SDPTOKEN', 'SDP Access Token Request', 'SDP Authentication');
   try {
     // 🎟️ Exchange authorization code for access and refresh tokens
     const tokenResponse = await axios.post('https://accounts.zoho.com/oauth/v2/token', null, {
@@ -119,11 +70,12 @@ app.get('/redirect_uri', async (req, res) => {
     res.status(500).send('<h2>❌ Token exchange failed. Please check the server logs.</h2>');
   }
 });
-
 // 🔑 Login
 // Simple in-memory session store (for demo; use Redis or DB in production)
+const sessions = {};
+const SESSION_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
+
 app.post('/login', (req, res) => {
-  
   const { username, password } = req.body;
   const client = ldap.createClient({ url: 'ldap://ldap.forumsys.com:389' });
   const dn = `uid=${username},dc=example,dc=com`;
@@ -137,8 +89,6 @@ app.post('/login', (req, res) => {
       const expiresAt = Date.now() + SESSION_EXPIRY_MS;
       sessions[sessionId] = { username, expiresAt };
 
-      await logAudit(username, 'LOGIN', 'User logged in', 'Authentication');
-      console.log(logAudit(username, 'LOGIN', 'User logged in', 'Authentication')); 
       // Instead of fetching Zoho token, send OAuth URL to frontend
       const client_id = process.env.SDP_CLIENT_ID;
       const redirect_uri = process.env.SDP_REDIRECT_URI; // e.g., http://localhost:3000/redirect_uri
@@ -163,54 +113,56 @@ app.post('/login', (req, res) => {
     }
   });
 });
-app.post('/logout', requireSession, (req, res) => {
-  const sessionId = req.headers['x-session-id'];
-  if (sessionId && sessions[sessionId]) {
-    delete sessions[sessionId];
-    logAudit(req.session.username, 'LOGOUT', 'User logged out', 'Authentication');
-    console.log(logAudit(req.session.username, 'LOGOUT', 'User logged out', 'Authentication'));
-  }
-  res.json({ message: 'Logged out successfully' });
-});
 
-// 🔍 Search Requesters (fetch from mock-app)
-app.get('/requesters', requireSession,async (req, res) => {
+// Middleware example to check session (use in protected routes)
+function requireSession(req, res, next) {
+  const sessionId = req.headers['x-session-id'];
+  const session = sessions[sessionId];
+  if (!session || session.expiresAt < Date.now()) {
+    return res.status(401).json({ error: 'Session expired or invalid' });
+  }
+  req.session = session;
+  next();
+}
+
+// 🔍 Search Requesters (using mock or direct DB)
+app.get('/requesters', async (req, res) => {
   const { name } = req.query;
-  if (!name) return res.status(400).json({ error: 'Search term is required' });
+  if (!name) return res.status(400).json({ error: 'Missing search term' });
 
   try {
-    const response = await axios.get('http://localhost:5050/lbp/requesters', {
-      params: { search: name },
+    const results = await prisma.requester.findMany({
+      where: {
+        OR: [
+          { first_name: { contains: name } },
+          { last_name: { contains: name } },
+          { email_id: { contains: name } },
+          { phone_num: { contains: name } },
+        ]
+      },
+      take: 10,
     });
-    
-    await logAudit(req.session.username, 'SEARCH', `Searched for: ${name}`, 'Requester');
-    console.log(logAudit(req.session.username, 'SEARCH', `Searched for: ${name}`, 'Requester'));
-    res.json(response.data);
-
+    res.json(results);
   } catch (error) {
+    console.error('Search failed:', error.message);
     res.status(500).json({ error: 'Search failed', details: error.message });
   }
 });
 
 // 🚀 Push Requester to SDP
-app.post('/push_requester', requireSession, async (req, res) => {
-// app.post('/push_requester', async (req, res) => {
+app.post('/push/requester/:id', async (req, res) => {
   try {
-    // Use the payload sent from the frontend (selected user in app.js)
-    const requester = req.body;
+    const requester = await prisma.requester.findUnique({
+      where: { id: parseInt(req.params.id) }
+    });
 
-    // Use the global ZOHO_ACCESS_TOKEN
-    const token = global.ZOHO_ACCESS_TOKEN;
-    if (!token) {
-      console.error('❌ No Zoho access token found. Make sure to complete the OAuth flow at /redirect_uri.');
-      return res.status(401).json({ error: 'No Zoho access token. Please authenticate via OAuth by logging in and completing the authorization process.' });
-    }
+    if (!requester) return res.status(404).json({ error: 'Requester not found' });
+
+    const token = await getSdpAccessToken();
 
     const payload = {
-      requester: {
+      requesters: {
         name: `${requester.first_name} ${requester.last_name}`,
-        first_name: requester.first_name,
-        last_name: requester.last_name,
         email_id: requester.email_id,
         phone: requester.phone_num,
         mobile: requester.mobile,
@@ -219,18 +171,13 @@ app.post('/push_requester', requireSession, async (req, res) => {
         description: requester.description
       }
     };
-    console.log('Pushing requester to SDP:', payload);
-    const url = process.env.SDP_ENV_URL+`/api/v3/requesters?input_data=${encodeURIComponent(JSON.stringify(payload))}`;
-    console.log('SDP URL:', url);
+
+    const url = `https://sdpondemand.manageengine.com/api/v3/requesters?input_data=${encodeURIComponent(JSON.stringify(payload))}`;
+
     const response = await axios.post(url, {}, {
-      headers: {
-        Authorization: `Zoho-oauthtoken ${token}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'application/vnd.manageengine.sdp.v3+json'
-      }
+      headers: { Authorization: `Zoho-oauthtoken ${token}` }
     });
 
-    await logAudit(req.session.username, 'PUSH', `Pushed requester ${requester.email_id}`, 'Requester');
     res.json({ success: true, sdp_response: response.data });
   } catch (err) {
     console.error('Push failed:', err.message);
@@ -238,20 +185,6 @@ app.post('/push_requester', requireSession, async (req, res) => {
   }
 });
 
-async function printAllAuditLogs() {
-  try {
-    const logs = await prisma.AuditTrail.findMany({ orderBy: { createdAt: 'desc' } });
-    console.log('\n=== All Audit Logs ===');
-    logs.forEach(log => {
-      console.log(`[${log.createdAt}] ${log.username} | ${log.actionId} | ${log.action} | ${log.module}`);
-    });
-    console.log('======================\n');
-  } catch (err) {
-    console.error('❌ Failed to fetch audit logs:', err.message);
-  }
-}
-
 // ✅ Start Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running at http://localhost:${PORT}`));
-// printAllAuditLogs().catch(err => console.error('❌ Error printing audit logs:', err.message));
